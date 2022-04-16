@@ -14,6 +14,10 @@ import (
 	"github.com/google/gopacket"
 )
 
+// SkipVxlanPayload is hack to skip decoding the vxlan payload
+// because some tests are naughty.
+var SkipVxlanPayload bool
+
 //  VXLAN is specifed in RFC 7348 https://tools.ietf.org/html/rfc7348
 //  G, D, A, Group Policy ID from https://tools.ietf.org/html/draft-smith-vxlan-group-policy-00
 //  0                   1                   2                   3
@@ -71,7 +75,10 @@ func (vx *VXLAN) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error 
 	// Layer information
 	const vxlanLength = 8
 	vx.Contents = data[:vxlanLength]
-	vx.Payload = data[vxlanLength:]
+
+	if !SkipVxlanPayload {
+		vx.Payload = data[vxlanLength:]
+	}
 
 	return nil
 
