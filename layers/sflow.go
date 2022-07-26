@@ -148,14 +148,15 @@ func decodeSFlow(data []byte, p gopacket.PacketBuilder) error {
 type SFlowDatagram struct {
 	BaseLayer
 
-	DatagramVersion uint32
-	AgentAddress    net.IP
-	SubAgentID      uint32
-	SequenceNumber  uint32
-	AgentUptime     uint32
-	SampleCount     uint32
-	FlowSamples     []SFlowFlowSample
-	CounterSamples  []SFlowCounterSample
+	DatagramVersion       uint32
+	AgentAddress          net.IP
+	SubAgentID            uint32
+	SequenceNumber        uint32
+	AgentUptime           uint32
+	SampleCount           uint32
+	FlowSamples           []SFlowFlowSample
+	CounterSamples        []SFlowCounterSample
+	DiscardedPacketEvents []SFlowDiscardedPacketEvent
 }
 
 // An SFlow  datagram's outer container has the following
@@ -226,6 +227,7 @@ const (
 	SFlowTypeCounterSample         SFlowSampleType = 2
 	SFlowTypeExpandedFlowSample    SFlowSampleType = 3
 	SFlowTypeExpandedCounterSample SFlowSampleType = 4
+	SFlowTypeDiscardedPacketEvent  SFlowSampleType = 5
 )
 
 func (st SFlowSampleType) GetType() SFlowSampleType {
@@ -238,6 +240,8 @@ func (st SFlowSampleType) GetType() SFlowSampleType {
 		return SFlowTypeExpandedFlowSample
 	case SFlowTypeExpandedCounterSample:
 		return SFlowTypeExpandedCounterSample
+	case SFlowTypeDiscardedPacketEvent:
+		return SFlowTypeDiscardedPacketEvent
 	default:
 		panic("Invalid Sample Type")
 	}
@@ -253,6 +257,8 @@ func (st SFlowSampleType) String() string {
 		return "Expanded Flow Sample"
 	case SFlowTypeExpandedCounterSample:
 		return "Expanded Counter Sample"
+	case SFlowTypeDiscardedPacketEvent:
+		return "Discarded Packet Event"
 	default:
 		return ""
 	}
@@ -336,6 +342,12 @@ func (s *SFlowDatagram) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback)
 		case SFlowTypeExpandedCounterSample:
 			if counterSample, err := decodeCounterSample(&data, true); err == nil {
 				s.CounterSamples = append(s.CounterSamples, counterSample)
+			} else {
+				return err
+			}
+		case SFlowTypeDiscardedPacketEvent:
+			if discardedPacketEvent, err := decodeDiscardedPacketEvent(&data, true); err == nil {
+				s.DiscardedPacketEvents = append(s.DiscardedPacketEvents, discardedPacketEvent)
 			} else {
 				return err
 			}
@@ -453,6 +465,158 @@ func skipRecord(data *[]byte) {
 	*data = (*data)[(recordLength+((4-recordLength)%4))+8:]
 }
 
+func decodeFlowRecords(recordCount uint32, data *[]byte) ([]SFlowRecord, error) {
+	records := []SFlowRecord{}
+	for i := uint32(0); i < recordCount; i++ {
+		rdf := SFlowFlowDataFormat(binary.BigEndian.Uint32((*data)[:4]))
+		enterpriseID, flowRecordType := rdf.decode()
+
+		// Try to decode when EnterpriseID is 0 signaling
+		// default sflow structs are used according specification
+		// Unexpected behavior detected for e.g. with pmacct
+		if enterpriseID == 0 {
+			switch flowRecordType {
+			case SFlowTypeRawPacketFlow:
+				if record, err := decodeRawPacketFlowRecord(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			case SFlowTypeExtendedUserFlow:
+				if record, err := decodeExtendedUserFlow(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			case SFlowTypeExtendedUrlFlow:
+				if record, err := decodeExtendedURLRecord(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			case SFlowTypeExtendedSwitchFlow:
+				if record, err := decodeExtendedSwitchFlowRecord(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			case SFlowTypeExtendedRouterFlow:
+				if record, err := decodeExtendedRouterFlowRecord(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			case SFlowTypeExtendedGatewayFlow:
+				if record, err := decodeExtendedGatewayFlowRecord(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			case SFlowTypeEthernetFrameFlow:
+				if record, err := decodeEthernetFrameFlowRecord(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			case SFlowTypeIpv4Flow:
+				if record, err := decodeSFlowIpv4Record(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			case SFlowTypeIpv6Flow:
+				if record, err := decodeSFlowIpv6Record(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			case SFlowTypeExtendedMlpsFlow:
+				// TODO
+				skipRecord(data)
+				return nil, errors.New("skipping TypeExtendedMlpsFlow")
+			case SFlowTypeExtendedNatFlow:
+				// TODO
+				skipRecord(data)
+				return nil, errors.New("skipping TypeExtendedNatFlow")
+			case SFlowTypeExtendedMlpsTunnelFlow:
+				// TODO
+				skipRecord(data)
+				return nil, errors.New("skipping TypeExtendedMlpsTunnelFlow")
+			case SFlowTypeExtendedMlpsVcFlow:
+				// TODO
+				skipRecord(data)
+				return nil, errors.New("skipping TypeExtendedMlpsVcFlow")
+			case SFlowTypeExtendedMlpsFecFlow:
+				// TODO
+				skipRecord(data)
+				return nil, errors.New("skipping TypeExtendedMlpsFecFlow")
+			case SFlowTypeExtendedMlpsLvpFecFlow:
+				// TODO
+				skipRecord(data)
+				return nil, errors.New("skipping TypeExtendedMlpsLvpFecFlow")
+			case SFlowTypeExtendedVlanFlow:
+				// TODO
+				skipRecord(data)
+				return nil, errors.New("skipping TypeExtendedVlanFlow")
+			case SFlowTypeExtendedIpv4TunnelEgressFlow:
+				if record, err := decodeExtendedIpv4TunnelEgress(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			case SFlowTypeExtendedIpv4TunnelIngressFlow:
+				if record, err := decodeExtendedIpv4TunnelIngress(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			case SFlowTypeExtendedIpv6TunnelEgressFlow:
+				if record, err := decodeExtendedIpv6TunnelEgress(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			case SFlowTypeExtendedIpv6TunnelIngressFlow:
+				if record, err := decodeExtendedIpv6TunnelIngress(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			case SFlowTypeExtendedDecapsulateEgressFlow:
+				if record, err := decodeExtendedDecapsulateEgress(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			case SFlowTypeExtendedDecapsulateIngressFlow:
+				if record, err := decodeExtendedDecapsulateIngress(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			case SFlowTypeExtendedVniEgressFlow:
+				if record, err := decodeExtendedVniEgress(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			case SFlowTypeExtendedVniIngressFlow:
+				if record, err := decodeExtendedVniIngress(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
+			default:
+				return nil, fmt.Errorf("Unsupported flow record type: %d", flowRecordType)
+			}
+		} else {
+			skipRecord(data)
+		}
+	}
+
+	return records, nil
+}
+
 func decodeFlowSample(data *[]byte, expanded bool) (SFlowFlowSample, error) {
 	s := SFlowFlowSample{}
 	var sdf SFlowDataFormat
@@ -529,152 +693,12 @@ func decodeFlowSample(data *[]byte, expanded bool) (SFlowFlowSample, error) {
 	}
 	*data, s.RecordCount = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
 
-	for i := uint32(0); i < s.RecordCount; i++ {
-		rdf := SFlowFlowDataFormat(binary.BigEndian.Uint32((*data)[:4]))
-		enterpriseID, flowRecordType := rdf.decode()
-
-		// Try to decode when EnterpriseID is 0 signaling
-		// default sflow structs are used according specification
-		// Unexpected behavior detected for e.g. with pmacct
-		if enterpriseID == 0 {
-			switch flowRecordType {
-			case SFlowTypeRawPacketFlow:
-				if record, err := decodeRawPacketFlowRecord(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			case SFlowTypeExtendedUserFlow:
-				if record, err := decodeExtendedUserFlow(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			case SFlowTypeExtendedUrlFlow:
-				if record, err := decodeExtendedURLRecord(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			case SFlowTypeExtendedSwitchFlow:
-				if record, err := decodeExtendedSwitchFlowRecord(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			case SFlowTypeExtendedRouterFlow:
-				if record, err := decodeExtendedRouterFlowRecord(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			case SFlowTypeExtendedGatewayFlow:
-				if record, err := decodeExtendedGatewayFlowRecord(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			case SFlowTypeEthernetFrameFlow:
-				if record, err := decodeEthernetFrameFlowRecord(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			case SFlowTypeIpv4Flow:
-				if record, err := decodeSFlowIpv4Record(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			case SFlowTypeIpv6Flow:
-				if record, err := decodeSFlowIpv6Record(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			case SFlowTypeExtendedMlpsFlow:
-				// TODO
-				skipRecord(data)
-				return s, errors.New("skipping TypeExtendedMlpsFlow")
-			case SFlowTypeExtendedNatFlow:
-				// TODO
-				skipRecord(data)
-				return s, errors.New("skipping TypeExtendedNatFlow")
-			case SFlowTypeExtendedMlpsTunnelFlow:
-				// TODO
-				skipRecord(data)
-				return s, errors.New("skipping TypeExtendedMlpsTunnelFlow")
-			case SFlowTypeExtendedMlpsVcFlow:
-				// TODO
-				skipRecord(data)
-				return s, errors.New("skipping TypeExtendedMlpsVcFlow")
-			case SFlowTypeExtendedMlpsFecFlow:
-				// TODO
-				skipRecord(data)
-				return s, errors.New("skipping TypeExtendedMlpsFecFlow")
-			case SFlowTypeExtendedMlpsLvpFecFlow:
-				// TODO
-				skipRecord(data)
-				return s, errors.New("skipping TypeExtendedMlpsLvpFecFlow")
-			case SFlowTypeExtendedVlanFlow:
-				// TODO
-				skipRecord(data)
-				return s, errors.New("skipping TypeExtendedVlanFlow")
-			case SFlowTypeExtendedIpv4TunnelEgressFlow:
-				if record, err := decodeExtendedIpv4TunnelEgress(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			case SFlowTypeExtendedIpv4TunnelIngressFlow:
-				if record, err := decodeExtendedIpv4TunnelIngress(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			case SFlowTypeExtendedIpv6TunnelEgressFlow:
-				if record, err := decodeExtendedIpv6TunnelEgress(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			case SFlowTypeExtendedIpv6TunnelIngressFlow:
-				if record, err := decodeExtendedIpv6TunnelIngress(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			case SFlowTypeExtendedDecapsulateEgressFlow:
-				if record, err := decodeExtendedDecapsulateEgress(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			case SFlowTypeExtendedDecapsulateIngressFlow:
-				if record, err := decodeExtendedDecapsulateIngress(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			case SFlowTypeExtendedVniEgressFlow:
-				if record, err := decodeExtendedVniEgress(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			case SFlowTypeExtendedVniIngressFlow:
-				if record, err := decodeExtendedVniIngress(data); err == nil {
-					s.Records = append(s.Records, record)
-				} else {
-					return s, err
-				}
-			default:
-				return s, fmt.Errorf("Unsupported flow record type: %d", flowRecordType)
-			}
-		} else {
-			skipRecord(data)
-		}
+	records, err := decodeFlowRecords(s.RecordCount, data)
+	if err != nil {
+		return SFlowFlowSample{}, err
 	}
+	s.Records = records
+
 	return s, nil
 }
 
@@ -864,6 +888,113 @@ func decodeCounterSample(data *[]byte, expanded bool) (SFlowCounterSample, error
 		}
 	}
 	return s, nil
+}
+
+// Discarded packet events have the following
+// structure Note the bit fields to encode the
+// Enterprise ID and the Flow record format: type 5
+//  0                      15                      31
+//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+//  |      20 bit Interprise (0)     |12 bit format |
+//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+//  |                  sample length                |
+//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+//  |          int sample sequence number           |
+//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+//  |               int src id type                 |
+//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+//  |             int src id index value            |
+//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+//  |                    int drops                  |
+//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+//  |           int input interface value           |
+//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+//  |           int output interface value          |
+//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+//  |                 int drop reason               |
+//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+//  |               int number of records           |
+//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+//  /                   flow records                /
+//  /                                               /
+//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+
+// SFlowDiscardedPacketEvent represents a discarded packet
+// and contains a drop reason as well as one or more
+// records describing the packet
+type SFlowDiscardedPacketEvent struct {
+	EnterpriseID SFlowEnterpriseID
+	Format       SFlowSampleType
+	SampleLength uint32
+
+	SequenceNumber  uint32
+	SourceIDClass   SFlowSourceFormat
+	SourceIDIndex   SFlowSourceValue
+	Dropped         uint32
+	InputInterface  uint32
+	OutputInterface uint32
+	DropReason      uint32
+	RecordCount     uint32
+	Records         []SFlowRecord
+}
+
+func (dp SFlowDiscardedPacketEvent) GetRecords() []SFlowRecord {
+	return dp.Records
+}
+
+func (dp SFlowDiscardedPacketEvent) GetType() SFlowSampleType {
+	return SFlowTypeDiscardedPacketEvent
+}
+
+func decodeDiscardedPacketEvent(data *[]byte, expanded bool) (SFlowDiscardedPacketEvent, error) {
+	p := SFlowDiscardedPacketEvent{}
+	var sdf SFlowDataFormat
+	*data, sdf = (*data)[4:], SFlowDataFormat(binary.BigEndian.Uint32((*data)[:4]))
+
+	p.EnterpriseID, p.Format = sdf.decode()
+	if len(*data) < 4 {
+		return SFlowDiscardedPacketEvent{}, errors.New("ethernet counters too small")
+	}
+	*data, p.SampleLength = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
+	if len(*data) < 4 {
+		return SFlowDiscardedPacketEvent{}, errors.New("ethernet counters too small")
+	}
+	*data, p.SequenceNumber = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
+	if len(*data) < 4 {
+		return SFlowDiscardedPacketEvent{}, errors.New("ethernet counters too small")
+	}
+	*data, p.SourceIDClass = (*data)[4:], SFlowSourceFormat(binary.BigEndian.Uint32((*data)[:4]))
+	if len(*data) < 4 {
+		return SFlowDiscardedPacketEvent{}, errors.New("ethernet counters too small")
+	}
+	*data, p.SourceIDIndex = (*data)[4:], SFlowSourceValue(binary.BigEndian.Uint32((*data)[:4]))
+	if len(*data) < 4 {
+		return SFlowDiscardedPacketEvent{}, errors.New("ethernet counters too small")
+	}
+	*data, p.Dropped = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
+	if len(*data) < 4 {
+		return SFlowDiscardedPacketEvent{}, errors.New("ethernet counters too small")
+	}
+	*data, p.InputInterface = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
+	if len(*data) < 4 {
+		return SFlowDiscardedPacketEvent{}, errors.New("ethernet counters too small")
+	}
+	*data, p.OutputInterface = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
+	if len(*data) < 4 {
+		return SFlowDiscardedPacketEvent{}, errors.New("ethernet counters too small")
+	}
+	*data, p.DropReason = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
+	if len(*data) < 4 {
+		return SFlowDiscardedPacketEvent{}, errors.New("ethernet counters too small")
+	}
+	*data, p.RecordCount = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
+
+	records, err := decodeFlowRecords(p.RecordCount, data)
+	if err != nil {
+		return SFlowDiscardedPacketEvent{}, err
+	}
+	p.Records = records
+	return p, nil
 }
 
 // SFlowBaseFlowRecord holds the fields common to all records
