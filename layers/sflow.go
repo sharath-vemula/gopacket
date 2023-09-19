@@ -606,6 +606,12 @@ func decodeFlowRecords(recordCount uint32, data *[]byte) ([]SFlowRecord, error) 
 				} else {
 					return nil, err
 				}
+			case SFlowTypeExtendedEgressQueue:
+				if record, err := decodeExtendedEgressQueue(data); err == nil {
+					records = append(records, record)
+				} else {
+					return nil, err
+				}
 			default:
 				return nil, fmt.Errorf("Unsupported flow record type: %d", flowRecordType)
 			}
@@ -1038,6 +1044,7 @@ const (
 	SFlowTypeExtendedDecapsulateIngressFlow SFlowFlowRecordType = 1028
 	SFlowTypeExtendedVniEgressFlow          SFlowFlowRecordType = 1029
 	SFlowTypeExtendedVniIngressFlow         SFlowFlowRecordType = 1030
+	SFlowTypeExtendedEgressQueue            SFlowFlowRecordType = 1036
 )
 
 func (rt SFlowFlowRecordType) String() string {
@@ -1090,6 +1097,8 @@ func (rt SFlowFlowRecordType) String() string {
 		return "Extended VNI Ingress Record"
 	case SFlowTypeExtendedVniIngressFlow:
 		return "Extended VNI Ingress Record"
+	case SFlowTypeExtendedEgressQueue:
+		return "Extended Egress Queue"
 	default:
 		return ""
 	}
@@ -2167,6 +2176,35 @@ func decodeExtendedVniIngress(data *[]byte) (SFlowExtendedVniIngressRecord, erro
 	rec.EnterpriseID, rec.Format = fdf.decode()
 	*data, rec.FlowDataLength = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
 	*data, rec.VNI = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
+
+	return rec, nil
+}
+
+// **************************************************
+//  Extended Egress Queue
+// **************************************************
+
+//  0                      15                      31
+//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+//  |      20 bit Interprise (0)     |12 bit format |
+//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+//  |                  record length                |
+//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+//  |                    queue                      |
+//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+type SFlowExtendedEgressQueueRecord struct {
+	SFlowBaseFlowRecord
+	Queue uint32
+}
+
+func decodeExtendedEgressQueue(data *[]byte) (SFlowExtendedEgressQueueRecord, error) {
+	rec := SFlowExtendedEgressQueueRecord{}
+	var fdf SFlowFlowDataFormat
+
+	*data, fdf = (*data)[4:], SFlowFlowDataFormat(binary.BigEndian.Uint32((*data)[:4]))
+	rec.EnterpriseID, rec.Format = fdf.decode()
+	*data, rec.FlowDataLength = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
+	*data, rec.Queue = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
 
 	return rec, nil
 }
