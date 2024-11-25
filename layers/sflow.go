@@ -1855,6 +1855,7 @@ func decodeExtendedUserFlow(data *[]byte) (SFlowExtendedUserFlow, error) {
 //  |                      TOS                      |
 //  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 type SFlowIpv4Record struct {
+	SFlowBaseFlowRecord
 	// The length of the IP packet excluding ower layer encapsulations
 	Length uint32
 	// IP Protocol type (for example, TCP = 6, UDP = 17)
@@ -1875,7 +1876,11 @@ type SFlowIpv4Record struct {
 
 func decodeSFlowIpv4Record(data *[]byte) (SFlowIpv4Record, error) {
 	si := SFlowIpv4Record{}
+	var fdf SFlowFlowDataFormat
 
+	*data, fdf = (*data)[4:], SFlowFlowDataFormat(binary.BigEndian.Uint32((*data)[:4]))
+	si.EnterpriseID, si.Format = fdf.decode()
+	*data, si.FlowDataLength = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
 	*data, si.Length = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
 	*data, si.Protocol = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
 	*data, si.IPSrc = (*data)[4:], net.IP((*data)[:4])
@@ -1911,6 +1916,7 @@ func decodeSFlowIpv4Record(data *[]byte) (SFlowIpv4Record, error) {
 //  |                    Priority                   |
 //  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 type SFlowIpv6Record struct {
+	SFlowBaseFlowRecord
 	// The length of the IP packet excluding ower layer encapsulations
 	Length uint32
 	// IP Protocol type (for example, TCP = 6, UDP = 17)
@@ -1931,7 +1937,11 @@ type SFlowIpv6Record struct {
 
 func decodeSFlowIpv6Record(data *[]byte) (SFlowIpv6Record, error) {
 	si := SFlowIpv6Record{}
+	var fdf SFlowFlowDataFormat
 
+	*data, fdf = (*data)[4:], SFlowFlowDataFormat(binary.BigEndian.Uint32((*data)[:4]))
+	si.EnterpriseID, si.Format = fdf.decode()
+	*data, si.FlowDataLength = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
 	*data, si.Length = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
 	*data, si.Protocol = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
 	*data, si.IPSrc = (*data)[16:], net.IP((*data)[:16])
@@ -1950,25 +1960,15 @@ func decodeSFlowIpv6Record(data *[]byte) (SFlowIpv6Record, error) {
 
 //  0                      15                      31
 //  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-//  |      20 bit Interprise (0)     |12 bit format |
-//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-//  |                  record length                |
-//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 //  /           Packet IP version 4 Record          /
 //  /                                               /
 //  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 type SFlowExtendedIpv4TunnelEgressRecord struct {
-	SFlowBaseFlowRecord
 	SFlowIpv4Record SFlowIpv4Record
 }
 
 func decodeExtendedIpv4TunnelEgress(data *[]byte) (SFlowExtendedIpv4TunnelEgressRecord, error) {
 	rec := SFlowExtendedIpv4TunnelEgressRecord{}
-	var fdf SFlowFlowDataFormat
-
-	*data, fdf = (*data)[4:], SFlowFlowDataFormat(binary.BigEndian.Uint32((*data)[:4]))
-	rec.EnterpriseID, rec.Format = fdf.decode()
-	*data, rec.FlowDataLength = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
 	rec.SFlowIpv4Record, _ = decodeSFlowIpv4Record(data)
 
 	return rec, nil
@@ -1980,25 +1980,15 @@ func decodeExtendedIpv4TunnelEgress(data *[]byte) (SFlowExtendedIpv4TunnelEgress
 
 //  0                      15                      31
 //  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-//  |      20 bit Interprise (0)     |12 bit format |
-//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-//  |                  record length                |
-//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 //  /           Packet IP version 4 Record          /
 //  /                                               /
 //  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 type SFlowExtendedIpv4TunnelIngressRecord struct {
-	SFlowBaseFlowRecord
 	SFlowIpv4Record SFlowIpv4Record
 }
 
 func decodeExtendedIpv4TunnelIngress(data *[]byte) (SFlowExtendedIpv4TunnelIngressRecord, error) {
 	rec := SFlowExtendedIpv4TunnelIngressRecord{}
-	var fdf SFlowFlowDataFormat
-
-	*data, fdf = (*data)[4:], SFlowFlowDataFormat(binary.BigEndian.Uint32((*data)[:4]))
-	rec.EnterpriseID, rec.Format = fdf.decode()
-	*data, rec.FlowDataLength = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
 	rec.SFlowIpv4Record, _ = decodeSFlowIpv4Record(data)
 
 	return rec, nil
@@ -2010,25 +2000,15 @@ func decodeExtendedIpv4TunnelIngress(data *[]byte) (SFlowExtendedIpv4TunnelIngre
 
 //  0                      15                      31
 //  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-//  |      20 bit Interprise (0)     |12 bit format |
-//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-//  |                  record length                |
-//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 //  /           Packet IP version 6 Record          /
 //  /                                               /
 //  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 type SFlowExtendedIpv6TunnelEgressRecord struct {
-	SFlowBaseFlowRecord
 	SFlowIpv6Record
 }
 
 func decodeExtendedIpv6TunnelEgress(data *[]byte) (SFlowExtendedIpv6TunnelEgressRecord, error) {
 	rec := SFlowExtendedIpv6TunnelEgressRecord{}
-	var fdf SFlowFlowDataFormat
-
-	*data, fdf = (*data)[4:], SFlowFlowDataFormat(binary.BigEndian.Uint32((*data)[:4]))
-	rec.EnterpriseID, rec.Format = fdf.decode()
-	*data, rec.FlowDataLength = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
 	rec.SFlowIpv6Record, _ = decodeSFlowIpv6Record(data)
 
 	return rec, nil
@@ -2040,25 +2020,15 @@ func decodeExtendedIpv6TunnelEgress(data *[]byte) (SFlowExtendedIpv6TunnelEgress
 
 //  0                      15                      31
 //  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-//  |      20 bit Interprise (0)     |12 bit format |
-//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-//  |                  record length                |
-//  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 //  /           Packet IP version 6 Record          /
 //  /                                               /
 //  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 type SFlowExtendedIpv6TunnelIngressRecord struct {
-	SFlowBaseFlowRecord
 	SFlowIpv6Record
 }
 
 func decodeExtendedIpv6TunnelIngress(data *[]byte) (SFlowExtendedIpv6TunnelIngressRecord, error) {
 	rec := SFlowExtendedIpv6TunnelIngressRecord{}
-	var fdf SFlowFlowDataFormat
-
-	*data, fdf = (*data)[4:], SFlowFlowDataFormat(binary.BigEndian.Uint32((*data)[:4]))
-	rec.EnterpriseID, rec.Format = fdf.decode()
-	*data, rec.FlowDataLength = (*data)[4:], binary.BigEndian.Uint32((*data)[:4])
 	rec.SFlowIpv6Record, _ = decodeSFlowIpv6Record(data)
 
 	return rec, nil
